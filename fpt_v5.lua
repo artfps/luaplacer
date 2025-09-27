@@ -1,41 +1,44 @@
--- 🧠 ПЕРЕМЕННЫЕ
+-- 📦 Получаем сервисы
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+-- 🎮 Локальный игрок
 local player = Players.LocalPlayer
 local username = player.Name
-local playerGui = player:WaitForChild("PlayerGui")
 
-local Framework = require(game:GetService("ReplicatedStorage"):WaitForChild("MultiboxFramework"))
+-- 📦 Подключаем MultiboxFramework
+local Framework = require(ReplicatedStorage:WaitForChild("MultiboxFramework"))
 while not Framework.Loaded do
 	RunService.Heartbeat:Wait()
 end
 
--- 🎛️ СОСТОЯНИЕ
-local isRunning = false
-local currentThread = nil
-
--- 🧩 ЭКИПИРОВКА ПРЕДМЕТА
-local function waitAndEquipTool()
+-- ✅ Экипировка первого Tool-а
+local function equipFirstTool()
 	local backpack = player:WaitForChild("Backpack")
 	local character = player.Character or player.CharacterAdded:Wait()
 
-	while true do
-		for _, item in pairs(backpack:GetChildren()) do
-			if item:IsA("Tool") then
-				item.Parent = character
-				print("🧰 Equipped tool:", item.Name)
-				return true
-			end
+	for _, item in pairs(backpack:GetChildren()) do
+		if item:IsA("Tool") then
+			item.Parent = character
+			print("🧰 Equipped tool:", item.Name)
+			return true
 		end
-		print("⌛ Waiting for new tool...")
-		task.wait(1)
 	end
+
+	warn("❌ No tool found in backpack.")
+	return false
 end
 
--- 🧱 ПОИСК УЧАСТКА
+-- 🔁 Переменные управления
+local isRunning = false
+local currentThread = nil
+
+-- 🧠 Функция поиска Plot-а игрока
 local function getPlayerPlot()
 	local plotSigns = workspace:WaitForChild("PlotOwnerSigns")
 	local plotsFolder = workspace:WaitForChild("Plots")
+
 	for _, plotModel in pairs(plotSigns:GetChildren()) do
 		local wall = plotModel:FindFirstChild("Brick_Wall")
 		if wall then
@@ -51,76 +54,73 @@ local function getPlayerPlot()
 			end
 		end
 	end
+
 	return nil
 end
 
--- 📦 ЦИКЛ РАЗМЕЩЕНИЯ
+-- 🧩 Основной цикл размещения
 local function placeObjectsInLoop()
-	local playerPlot = getPlayerPlot()
-	if not playerPlot then
-		warn("❌ Plot not found.")
-		return
-	end
-
-	print("✅ Found plot:", playerPlot.Name)
-	local baseCFrame
-	if playerPlot:IsA("Model") then
-		local cf, _ = playerPlot:GetBoundingBox()
-		baseCFrame = cf
-	else
-		baseCFrame = playerPlot.CFrame
-	end
-
-	local xSteps, zSteps, spacing = 10, 10, 5
-
-	for x = -xSteps/2, xSteps/2 - 1 do
-		for z = -zSteps/2, zSteps/2 - 1 do
-			if not isRunning then
-				print("⏸️ Paused.")
-				return
+	while isRunning do
+		-- Экипировать предмет (если закончились)
+		if not player.Character:FindFirstChildOfClass("Tool") then
+			if not equipFirstTool() then
+				print("🛑 Остановка: нет предметов.")
+				isRunning = false
+				break
 			end
-
-			if not player:FindFirstChildOfClass("Tool") then
-				waitAndEquipTool()
-			end
-
-			local offset = Vector3.new(x * spacing, 0, z * spacing)
-			local newCFrame = CFrame.new(baseCFrame.Position + offset)
-			Framework.Network.Invoke("PlaceObjectRequest", newCFrame)
-			task.wait(0.1)
 		end
+
+		local playerPlot = getPlayerPlot()
+		if playerPlot then
+			local centerCFrame
+			if playerPlot:IsA("Model") then
+				local cf, _ = playerPlot:GetBoundingBox()
+				centerCFrame = cf
+			else
+				centerCFrame = playerPlot.CFrame
+			end
+
+			-- 🚀 Размещаем
+			Framework.Network.Invoke("PlaceObjectRequest", centerCFrame)
+			print("📦 Размещён объект в центр плашки")
+		else
+			warn("❌ Plot not found")
+			break
+		end
+
+		task.wait(0.5) -- интервал между размещениями
 	end
 end
 
--- 🧰 GUI КНОПКИ
+-- 🧱 Интерфейс: Кнопка + X
 local screenGui = Instance.new("ScreenGui")
 screenGui.Name = "PlacementControlGui"
 screenGui.ResetOnSpawn = false
-screenGui.Parent = playerGui
+screenGui.Parent = player:WaitForChild("PlayerGui")
 
 local mainButton = Instance.new("TextButton")
 mainButton.Size = UDim2.new(0, 160, 0, 50)
-mainButton.Position = UDim2.new(0, 100, 0, 100)
-mainButton.BackgroundColor3 = Color3.fromRGB(65, 180, 75)
-mainButton.TextColor3 = Color3.new(1, 1, 1)
-mainButton.Font = Enum.Font.GothamBold
-mainButton.TextSize = 16
+mainButton.Position = UDim2.new(0, 100, 0, 300)
 mainButton.Text = "▶️ Start Placement"
+mainButton.BackgroundColor3 = Color3.fromRGB(65, 180, 75)
+mainButton.TextSize = 18
+mainButton.Font = Enum.Font.SourceSansBold
 mainButton.Parent = screenGui
 mainButton.Active = true
 mainButton.Draggable = true
 
 local closeButton = Instance.new("TextButton")
 closeButton.Size = UDim2.new(0, 30, 0, 30)
-closeButton.Position = UDim2.new(0, 230, 0, 100)
-closeButton.BackgroundColor3 = Color3.fromRGB(200, 0, 0)
-closeButton.TextColor3 = Color3.new(1, 1, 1)
-closeButton.Font = Enum.Font.GothamBold
-closeButton.TextSize = 16
+closeButton.Position = UDim2.new(0, 240, 0, 300)
 closeButton.Text = "❌"
+closeButton.BackgroundColor3 = Color3.fromRGB(200, 50, 50)
+closeButton.TextSize = 20
+closeButton.Font = Enum.Font.SourceSansBold
 closeButton.Parent = screenGui
+closeButton.Active = true
+closeButton.Draggable = true
 
--- 🔄 Переключение состояния
+-- ▶️/⏸️ Тоггл цикла размещения
 mainButton.MouseButton1Click:Connect(function()
 	isRunning = not isRunning
 	if isRunning then
@@ -133,12 +133,14 @@ mainButton.MouseButton1Click:Connect(function()
 	end
 end)
 
--- ❌ Закрытие и выгрузка
+-- ❌ Остановка и очистка GUI
 closeButton.MouseButton1Click:Connect(function()
 	isRunning = false
-	if currentThread then
+	if currentThread and coroutine.status(currentThread) == "suspended" then
 		task.cancel(currentThread)
+		print("⛔ Цикл остановлен")
 	end
 	screenGui:Destroy()
-	print("🛑 Script stopped and GUI removed.")
+	currentThread = nil
+	print("🧹 Скрипт и интерфейс выгружены")
 end)
